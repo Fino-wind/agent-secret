@@ -6,8 +6,12 @@ description: Store or use a secret/credential (API key, DB DSN, token, password)
 # secret — agent-safe credential handling
 
 Backed by `secret` (macOS Keychain). The whole point: the human types the value
-into a GUI box, it lives only in the Keychain, and **the plaintext never appears
-in the chat, a file, or the agent's context**.
+into a GUI box, it lives only in the Keychain, and **the plaintext never enters
+the chat transcript or a plaintext file** — provided you follow the ironclad
+rules below. This tool keeps secrets out of the *conversation*; it does NOT make
+them un-leakable at the OS level (`ps`, env vars, a wrapped command that echoes
+its own args, etc.). Your discipline is the security boundary — the `get`
+command will happily print plaintext if you misuse it.
 
 ## When you need a credential that isn't stored yet
 

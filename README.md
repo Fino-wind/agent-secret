@@ -1,18 +1,27 @@
 # secret — a tiny secret manager for AI coding agents
 
-A ~70-line Bash wrapper around the **macOS Keychain** that lets an AI agent
-(Claude Code, Cursor, etc.) *use* your credentials without ever *seeing* them.
+A ~70-line Bash wrapper around the **macOS Keychain** that keeps your
+credentials out of the **LLM transcript** when an AI agent (Claude Code, Cursor,
+etc.) needs to use them.
 
-The problem: when an agent needs an API key or DB password, the naive flow is
-"paste it in the chat" — which leaks the plaintext into conversation history,
-logs, and the model's context. `secret` closes that hole.
+The problem it solves: when an agent needs an API key or DB password, the naive
+flow is "paste it in the chat" — which writes the plaintext into the
+conversation history and the model's context, where it persists. `secret` closes
+*that specific hole*: you type the value into a GUI box (never the chat), and the
+agent references it as `$(secret get <name>)` — a command string that contains no
+plaintext, so the transcript stays clean.
+
+**It is not a general "the plaintext never leaks" guarantee.** See
+[Threat model](#threat-model--limitations) below for exactly what it does and
+does not protect against.
 
 ## How it works
 
 - **You** type the value into a native macOS GUI box (hidden answer). It goes
-  straight into the login Keychain. It never touches the chat or a plaintext file.
-- **The agent** injects it at run time with `$(secret get <name>)` and is
-  instructed never to print, `cat`, or echo the plaintext.
+  straight into the login Keychain — never the chat, never a plaintext file.
+- **The agent** injects it at run time with `$(secret get <name>)`. The command
+  string holds no plaintext, so it's safe to appear in the transcript. The agent
+  is also instructed never to print, `cat`, or echo the resolved value.
 
 ```
 secret set <name>   # pop a hidden GUI prompt, store the value in Keychain
@@ -45,13 +54,49 @@ secret set openai-key
 OPENAI_API_KEY="$(secret get openai-key)" python my_script.py
 ```
 
+## Threat model & limitations
+
+Be honest about what this does. It is a **narrow** tool with one job.
+
+**What it protects against**
+- ✅ The credential entering the **LLM transcript / model context**. You never
+  paste it in chat; the `$(secret get <name>)` command string contains no
+  plaintext. This is the whole point.
+- ✅ The credential sitting in a **plaintext file** (`.env`, config) on disk.
+- ✅ The credential landing in **shell history** (the history line is the
+  command substitution, not the value).
+
+**What it does NOT protect against**
+- ❌ **An agent that runs `secret get <name>` on its own** (to "see" the value)
+  prints the plaintext straight to stdout — and into its context/logs. The only
+  guard is the instruction in `SKILL.md`; the tool cannot enforce it. `get`
+  exists to emit plaintext, by design.
+- ❌ **A wrapped command that echoes its own env/args.** If `the-command` prints
+  `$SOME_ENV`, the value lands in stdout. Mitigate by piping through
+  `grep -v '<prefix>'`, but that's fragile.
+- ❌ **Process inspection.** A value injected via env var is visible to
+  same-user processes via `ps eww` / `ps -E`. Passing it as a CLI arg
+  (`--key=$(secret get x)`) is worse — it shows up in `ps aux` for everyone.
+  Prefer env-var injection, never argv.
+- ❌ **Keychain "Always Allow".** After you grant it once, *any* program running
+  as your user can read that item via `security` with no further prompt. That's
+  the convenience/security trade-off; if you want a prompt every time, don't
+  click Always Allow.
+- ❌ **Memory disclosure** (swap, core dumps). Generic to any process holding a
+  plaintext secret in memory; not specific to this tool.
+
+In short: this keeps secrets out of the **conversation**, not out of the
+**operating system**. For OS-level secret hygiene use a real secrets manager and
+least-privilege scoping.
+
 ## Notes
 
 - **macOS only** — relies on `security` (Keychain) and `osascript` (GUI dialog).
 - Secrets are stored under the Keychain service prefix `agent.secret.<name>`,
   scoped to your user account.
 - The first `secret get` may pop a Keychain authorization dialog; click
-  **Always Allow** to let the wrapping command read it non-interactively.
+  **Always Allow** to let the wrapping command read it non-interactively
+  (see the trade-off in [Threat model](#threat-model--limitations)).
 
 ## License
 
