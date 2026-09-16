@@ -39,6 +39,48 @@ install -m 755 agent-secret/secret /usr/local/bin/secret   # or anywhere on PATH
 
 ## Use with Claude Code
 
+### Windows (PowerShell 5.1 / 7)
+
+Clone the repository and keep both files in `windows/` together. No third-party
+packages or system execution-policy changes are required. From PowerShell:
+
+```powershell
+& .\windows\secret.ps1 set supabase-key
+& .\windows\secret.ps1 list
+```
+
+`set` opens a masked Windows Forms dialog. Cancel or an empty value leaves any
+existing value unchanged. Values are encrypted using Windows DPAPI CurrentUser
+in `%LOCALAPPDATA%\agent-secret`; the directory grants only the current user
+access. Secret names are visible filenames, case-insensitive on Windows, and
+limited to 1-128 ASCII letters, digits, underscores, dots and hyphens.
+
+Capture `get` directly into the environment, check success, and restore it after
+the child command finishes. Never run `get` alone in an agent transcript:
+
+```powershell
+$previous = $env:SOME_ENV
+try {
+    $env:SOME_ENV = & .\windows\secret.ps1 get supabase-key
+    if (-not $?) { throw 'Secret lookup failed' }
+    # Run the application here; it must not log its environment.
+} finally {
+    $env:SOME_ENV = $previous
+}
+```
+
+Use `rm <name>` to delete a value. Run `windows/test.ps1` to exercise storage
+with disposable dummy values. GUI Save/Cancel should also be checked manually
+on an interactive Windows desktop. If organizational policy blocks scripts,
+use your administrator's approved signing/execution process; do not disable it.
+
+DPAPI data is tied to the Windows user/profile, not portable backups. There is
+no per-read authorization dialog: programs running as that user can decrypt it.
+The GUI text and decrypted values necessarily exist in process memory; this
+does not protect against malware, administrators, logging by child programs,
+PowerShell transcription/debug tracing, or an agent printing `get` output.
+Do not supply a `-Key` to the storage commands or store real keys in this repo.
+
 Drop `SKILL.md` into a skill directory (e.g. `~/.claude/skills/secret/SKILL.md`)
 so the agent knows when and how to reach for it. The skill teaches the agent to
 trigger `secret set` instead of asking you to paste credentials in chat, and to
@@ -91,7 +133,8 @@ least-privilege scoping.
 
 ## Notes
 
-- **macOS only** — relies on `security` (Keychain) and `osascript` (GUI dialog).
+- The Bash entry point is **macOS only** (`security` and `osascript`).
+  Windows has a separate PowerShell entry point, documented above.
 - Secrets are stored under the Keychain service prefix `agent.secret.<name>`,
   scoped to your user account.
 - The first `secret get` may pop a Keychain authorization dialog; click

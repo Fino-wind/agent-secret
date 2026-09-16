@@ -1,9 +1,35 @@
 ---
 name: secret
-description: Store or use a secret/credential (API key, DB DSN, token, password) WITHOUT it ever entering the chat or the agent's context. Trigger this whenever a command needs a credential that isn't stored yet, or the user asks to "save/store a key/password/token/secret", or says "I'll give you the key". The agent pops a native macOS GUI input box for the human to type the value into; it is saved in the login Keychain; the agent injects it with $(secret get <name>) and NEVER prints, cats, or reads the plaintext. macOS only.
+description: Store and use credentials without pasting them into chat. Use the macOS Keychain or Windows DPAPI with a masked GUI input prompt, then inject credentials into a process environment without printing them. Applies when the user wants to store a key or a command needs a credential.
 ---
 
 # secret — agent-safe credential handling
+
+## Windows
+
+On Windows use the repository's `windows/secret.ps1` (keep `SecretStore.psm1`
+beside it); the Bash entry point is for macOS. Run `set <name>` to open the
+masked dialog for the user. DPAPI stores encrypted files under LOCALAPPDATA,
+scoped to the current Windows user. Do not change execution policy to run it.
+
+```powershell
+& '<repo>\windows\secret.ps1' set example-key
+$previous = $env:SOME_ENV
+try {
+    $env:SOME_ENV = & '<repo>\windows\secret.ps1' get example-key
+    if (-not $?) { throw 'Secret lookup failed' }
+    # Run the intended command; never print its environment.
+} finally {
+    $env:SOME_ENV = $previous
+}
+```
+
+Never call `get` on its own, print the captured value, pass it in command-line
+arguments, or use transcription/debug tracing while retrieving it. `list`
+reveals names only. There is no Windows per-read prompt; same-user programs can
+decrypt the store. Inspect a command's logging behavior before injecting secrets;
+prefix filtering is not a guarantee against leakage. The remaining Keychain
+instructions apply only to macOS.
 
 Backed by `secret` (macOS Keychain). The whole point: the human types the value
 into a GUI box, it lives only in the Keychain, and **the plaintext never enters
